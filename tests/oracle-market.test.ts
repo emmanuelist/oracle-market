@@ -707,3 +707,110 @@ describe("Oracle Market Contract Tests", () => {
         deployer
       );
     });
+
+     it("should mint first prediction achievement on first stake", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE)],
+        wallet1
+      );
+
+      const achievement = simnet.callReadOnlyFn(
+        "oracle-market",
+        "get-user-achievement",
+        [Cl.principal(wallet1), Cl.uint(1)], // ACHIEVEMENT-FIRST-PREDICTION
+        wallet1
+      );
+
+      expect(achievement.result).toBeSome(Cl.tuple({ "token-id": Cl.uint(0), "earned-at": Cl.uint(4) }));
+    });
+
+    it("should track user statistics correctly", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE)],
+        wallet1
+      );
+
+      const stats = simnet.callReadOnlyFn(
+        "oracle-market",
+        "get-user-stats-info",
+        [Cl.principal(wallet1)],
+        wallet1
+      );
+
+      expect(stats.result).toBeOk(
+        Cl.tuple({
+          "total-predictions": Cl.uint(1),
+          "total-wins": Cl.uint(0),
+          "total-stx-earned": Cl.uint(0),
+          "achievement-count": Cl.uint(1)
+        })
+      );
+    });
+
+    it("should not allow transferring achievement NFTs", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE)],
+        wallet1
+      );
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "transfer-nft",
+        [Cl.uint(0), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(204)); // ERR-ACHIEVEMENT-LOCKED
+    });
+
+    it("should allow owner to set achievement metadata", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "set-achievement-metadata",
+        [
+          Cl.uint(1),
+          Cl.stringAscii("Custom Achievement"),
+          Cl.stringUtf8("Custom description"),
+          Cl.stringAscii("ipfs://custom"),
+          Cl.bool(true)
+        ],
+        deployer
+      );
+
+      expect(result.result).toBeOk(Cl.bool(true));
+    });
+  });
+
+  describe("Read-Only Functions", () => {
+    it("should return market details", () => {
+      const currentBlock = simnet.blockHeight;
+      
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Description"),
+          Cl.stringAscii("Sports"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(currentBlock + 100),
+          Cl.uint(currentBlock + 50)
+        ],
+        deployer
+      );
+
+      const market = simnet.callReadOnlyFn(
+        "oracle-market",
+        "get-market",
+        [Cl.uint(0)],
+        deployer
+      );
+
+      expect(market.result.type).toBe(ClarityType.OptionalSome);
+    });
