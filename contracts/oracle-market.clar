@@ -724,3 +724,80 @@
     (ok new-token-id)
   )
 )
+
+(define-public (mint-achievement (user principal) (achievement-type uint))
+  ;; Mints achievement NFTs to reward Oracle Market participation
+  ;; Public function for admin to manually mint achievements
+  (begin
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (mint-achievement-internal user achievement-type)
+  )
+)
+
+;; ============================================
+;; PRIVATE FUNCTIONS - STAT TRACKING
+;; ============================================
+
+(define-private (increment-predictions (user principal))
+  ;; Tracks user prediction activity in Oracle Market for achievements
+  ;; Automatically mints "First Prediction" achievement NFT
+  (let
+    (
+      (stats (get-user-stats-or-default user))
+      (new-total (+ (get total-predictions stats) u1))
+    )
+    (map-set user-achievement-stats
+      { user: user }
+      (merge stats { total-predictions: new-total })
+    )
+    
+    ;; Log prediction increment
+    (print {
+      event: "prediction-tracked",
+      user: user,
+      total-predictions: new-total,
+      block-height: stacks-block-height
+    })
+    
+    ;; Auto-mint first prediction achievement
+    (if (is-eq new-total u1)
+      (mint-achievement-internal user ACHIEVEMENT-FIRST-PREDICTION)
+      (ok u0)
+    )
+  )
+)
+
+(define-private (increment-wins (user principal))
+  ;; Tracks successful predictions in Oracle Market for win-based achievements
+  ;; Automatically mints NFTs at 1, 5, and 10 wins milestones
+  (let
+    (
+      (stats (get-user-stats-or-default user))
+      (new-total (+ (get total-wins stats) u1))
+    )
+    (map-set user-achievement-stats
+      { user: user }
+      (merge stats { total-wins: new-total })
+    )
+    
+    ;; Log win increment
+    (print {
+      event: "win-tracked",
+      user: user,
+      total-wins: new-total,
+      block-height: stacks-block-height
+    })
+    
+    ;; Auto-mint win achievements
+    (if (is-eq new-total u1)
+      (mint-achievement-internal user ACHIEVEMENT-FIRST-WIN)
+      (if (is-eq new-total u5)
+        (mint-achievement-internal user ACHIEVEMENT-FIVE-WINS)
+        (if (is-eq new-total u10)
+          (mint-achievement-internal user ACHIEVEMENT-TEN-WINS)
+          (ok u0)
+        )
+      )
+    )
+  )
+)
