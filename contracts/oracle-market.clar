@@ -671,3 +671,56 @@
     ))
   )
 )
+
+(define-public (transfer-nft (token-id uint) (sender principal) (recipient principal))
+  ;; Achievement NFTs are soulbound - cannot be transferred
+  ;; Oracle Market achievements are tied to the user who earned them
+  ;; This ensures authentic reputation and prevents gaming the system
+  ERR-ACHIEVEMENT-LOCKED
+)
+
+;; Private function to mint achievement without authorization check (for auto-minting)
+(define-private (mint-achievement-internal (user principal) (achievement-type uint))
+  (let
+    (
+      (new-token-id (var-get token-id-nonce))
+      (existing-achievement (get-user-achievement user achievement-type))
+      (metadata (unwrap! (map-get? achievement-metadata { achievement-type: achievement-type }) ERR-INVALID-ACHIEVEMENT))
+      (user-stats (get-user-stats-or-default user))
+    )
+    (asserts! (get enabled metadata) ERR-INVALID-ACHIEVEMENT)
+    (asserts! (is-none existing-achievement) ERR-ALREADY-EXISTS)
+    
+    ;; Mint NFT
+    (map-set token-owners
+      { token-id: new-token-id }
+      { owner: user }
+    )
+    
+    ;; Record achievement
+    (map-set user-achievements
+      { user: user, achievement-type: achievement-type }
+      { token-id: new-token-id, earned-at: stacks-block-height }
+    )
+    
+    ;; Update user stats
+    (map-set user-achievement-stats
+      { user: user }
+      (merge user-stats { achievement-count: (+ (get achievement-count user-stats) u1) })
+    )
+    
+    ;; Increment token ID
+    (var-set token-id-nonce (+ new-token-id u1))
+    
+    ;; Log achievement mint event
+    (print {
+      event: "achievement-minted",
+      user: user,
+      achievement-type: achievement-type,
+      token-id: new-token-id,
+      block-height: stacks-block-height
+    })
+    
+    (ok new-token-id)
+  )
+)
