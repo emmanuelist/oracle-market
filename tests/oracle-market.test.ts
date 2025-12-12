@@ -403,3 +403,101 @@ describe("Oracle Market Contract Tests", () => {
         wallet2
       );
     });
+
+     it("should allow oracle to lock market after lock date", () => {
+      // Advance to lock date
+      simnet.mineEmptyBlocks(11);
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "lock-market",
+        [Cl.uint(marketId)],
+        oracle
+      );
+
+      expect(result.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should not allow locking before lock date", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "lock-market",
+        [Cl.uint(marketId)],
+        oracle
+      );
+
+      expect(result.result).toBeErr(Cl.uint(119)); // ERR-INVALID-DATE
+    });
+
+    it("should not allow non-oracle to lock market", () => {
+      simnet.mineEmptyBlocks(11);
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "lock-market",
+        [Cl.uint(marketId)],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(100)); // ERR-NOT-AUTHORIZED
+    });
+
+    it("should allow oracle to resolve market", () => {
+      // Advance to resolution date
+      simnet.mineEmptyBlocks(21);
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "resolve-market",
+        [Cl.uint(marketId), Cl.uint(0)], // Team A wins
+        oracle
+      );
+
+      expect(result.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should not allow non-oracle to resolve market", () => {
+      simnet.mineEmptyBlocks(21);
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "resolve-market",
+        [Cl.uint(marketId), Cl.uint(0)],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(110)); // ERR-INVALID-ORACLE
+    });
+
+    it("should reject staking after market is locked", () => {
+      simnet.mineEmptyBlocks(11);
+      
+      simnet.callPublicFn(
+        "oracle-market",
+        "lock-market",
+        [Cl.uint(marketId)],
+        oracle
+      );
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(marketId), Cl.uint(0), Cl.uint(MIN_STAKE)],
+        wallet3
+      );
+
+      expect(result.result).toBeErr(Cl.uint(106)); // ERR-MARKET-CLOSED (locked market prevents staking)
+    });
+  });
+
+  describe("Claiming Winnings", () => {
+    let marketId: number;
+
+    beforeEach(() => {
+      // Set oracle
+      simnet.callPublicFn(
+        "oracle-market",
+        "set-oracle-address",
+        [Cl.principal(oracle)],
+        deployer
+      );
