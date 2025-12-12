@@ -100,7 +100,7 @@ describe("Oracle Market Contract Tests", () => {
       expect(result.result).toBeOk(Cl.bool(true));
     });
 
-     it("should not allow platform fee above 10%", () => {
+    it("should not allow platform fee above 10%", () => {
       const result = simnet.callPublicFn(
         "oracle-market",
         "set-platform-fee",
@@ -308,7 +308,7 @@ describe("Oracle Market Contract Tests", () => {
       expect(result.result).toBeErr(Cl.uint(103)); // ERR-INVALID-OUTCOME
     });
 
-     it("should allow multiple users to stake on different outcomes", () => {
+    it("should allow multiple users to stake on different outcomes", () => {
       const stake1 = simnet.callPublicFn(
         "oracle-market",
         "place-stake",
@@ -404,7 +404,7 @@ describe("Oracle Market Contract Tests", () => {
       );
     });
 
-     it("should allow oracle to lock market after lock date", () => {
+    it("should allow oracle to lock market after lock date", () => {
       // Advance to lock date
       simnet.mineEmptyBlocks(11);
 
@@ -502,7 +502,7 @@ describe("Oracle Market Contract Tests", () => {
         deployer
       );
 
-       const currentBlock = simnet.blockHeight;
+      const currentBlock = simnet.blockHeight;
       marketId = 0;
 
       // Create market
@@ -604,7 +604,7 @@ describe("Oracle Market Contract Tests", () => {
         deployer
       );
 
-       simnet.callPublicFn(
+      simnet.callPublicFn(
         "oracle-market",
         "place-stake",
         [Cl.uint(1), Cl.uint(0), Cl.uint(MIN_STAKE)],
@@ -708,7 +708,7 @@ describe("Oracle Market Contract Tests", () => {
       );
     });
 
-     it("should mint first prediction achievement on first stake", () => {
+    it("should mint first prediction achievement on first stake", () => {
       simnet.callPublicFn(
         "oracle-market",
         "place-stake",
@@ -814,3 +814,120 @@ describe("Oracle Market Contract Tests", () => {
 
       expect(market.result.type).toBe(ClarityType.OptionalSome);
     });
+
+    it("should calculate current odds correctly", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test"),
+          Cl.stringUtf8("Test"),
+          Cl.stringAscii("Test"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
+
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE * 10)],
+        wallet1
+      );
+
+      const odds = simnet.callReadOnlyFn(
+        "oracle-market",
+        "get-current-odds",
+        [Cl.uint(0), Cl.uint(0)],
+        wallet1
+      );
+
+      expect(odds.result).toBeOk(Cl.uint(10000)); // 100% since only one outcome has stakes
+    });
+
+    it("should calculate potential winnings", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test"),
+          Cl.stringUtf8("Test"),
+          Cl.stringAscii("Test"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
+
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE * 10)],
+        wallet1
+      );
+
+      const winnings = simnet.callReadOnlyFn(
+        "oracle-market",
+        "calculate-potential-winnings",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE * 5)],
+        wallet2
+      );
+
+      expect(winnings.result).toBeOk(Cl.uint(4850000));
+    });
+  });
+
+  describe("Pause Functionality", () => {
+    it("should prevent market creation when paused", () => {
+      simnet.callPublicFn("oracle-market", "toggle-pause", [], deployer);
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test"),
+          Cl.stringUtf8("Test"),
+          Cl.stringAscii("Test"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
+
+      expect(result.result).toBeErr(Cl.uint(113)); // ERR-PAUSED
+    });
+
+    it("should prevent staking when paused", () => {
+      // Create market before pausing
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test"),
+          Cl.stringUtf8("Test"),
+          Cl.stringAscii("Test"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
+
+      // Pause contract
+      simnet.callPublicFn("oracle-market", "toggle-pause", [], deployer);
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE)],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(113)); // ERR-PAUSED
+    });
+  });
+});
