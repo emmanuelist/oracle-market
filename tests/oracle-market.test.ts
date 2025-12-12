@@ -307,3 +307,99 @@ describe("Oracle Market Contract Tests", () => {
 
       expect(result.result).toBeErr(Cl.uint(103)); // ERR-INVALID-OUTCOME
     });
+
+     it("should allow multiple users to stake on different outcomes", () => {
+      const stake1 = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE * 2)],
+        wallet1
+      );
+
+      const stake2 = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(1), Cl.uint(MIN_STAKE * 3)],
+        wallet2
+      );
+
+      expect(stake1.result).toBeOk(Cl.bool(true));
+      expect(stake2.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should update outcome pool totals correctly", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(0), Cl.uint(0), Cl.uint(MIN_STAKE * 5)],
+        wallet1
+      );
+
+      const poolInfo = simnet.callReadOnlyFn(
+        "oracle-market",
+        "get-outcome-pool-info",
+        [Cl.uint(0), Cl.uint(0)],
+        wallet1
+      );
+
+      expect(poolInfo.result).toBeOk(
+        Cl.tuple({
+          "total-staked": Cl.uint(MIN_STAKE * 5),
+          "staker-count": Cl.uint(1)
+        })
+      );
+    });
+  });
+
+  describe("Market Locking and Resolution", () => {
+    let marketId: number;
+    let lockDate: number;
+    let resolutionDate: number;
+
+    beforeEach(() => {
+      // Set oracle address
+      simnet.callPublicFn(
+        "oracle-market",
+        "set-oracle-address",
+        [Cl.principal(oracle)],
+        deployer
+      );
+
+      const currentBlock = simnet.blockHeight;
+      lockDate = currentBlock + 10;
+      resolutionDate = currentBlock + 20;
+      marketId = 0;
+
+      // Create market
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Test Description"),
+          Cl.stringAscii("Sports"),
+          Cl.list([
+            Cl.stringUtf8("Team A"),
+            Cl.stringUtf8("Team B")
+          ]),
+          Cl.uint(resolutionDate),
+          Cl.uint(lockDate)
+        ],
+        deployer
+      );
+
+      // Place some stakes
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(marketId), Cl.uint(0), Cl.uint(MIN_STAKE * 10)],
+        wallet1
+      );
+
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(marketId), Cl.uint(1), Cl.uint(MIN_STAKE * 5)],
+        wallet2
+      );
+    });
