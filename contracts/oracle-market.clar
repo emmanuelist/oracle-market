@@ -588,3 +588,86 @@
     (ok true)
   )
 )
+
+;; ============================================
+;; PUBLIC FUNCTIONS - CLAIMING WINNINGS
+;; ============================================
+
+(define-public (claim-winnings (market-id uint))
+  ;; Users claim their winnings from correctly predicted outcomes
+  ;; After oracle resolves market, winners receive proportional share of pool
+  ;; Winnings are calculated minus platform fees
+  ;; Triggers achievement NFT minting for Oracle Market milestones
+  (let
+    (
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (market-state (get state market))
+      (winning-outcome (unwrap! (get winning-outcome market) ERR-MARKET-NOT-RESOLVED))
+      (user-stake (unwrap! (get-user-stake tx-sender market-id winning-outcome) ERR-NO-WINNINGS))
+      (user-amount (get amount user-stake))
+      (already-claimed (get claimed user-stake))
+      (total-pool (get total-pool market))
+      (fee-amount (calculate-fee total-pool))
+      (distributable-pool (- total-pool fee-amount))
+      (winning-pool (get-outcome-pool market-id winning-outcome))
+      (winning-total (get total-staked winning-pool))
+      (user-winnings (/ (* distributable-pool user-amount) winning-total))
+    )
+    (asserts! (is-eq market-state STATE-RESOLVED) ERR-MARKET-NOT-RESOLVED)
+    (asserts! (not already-claimed) ERR-ALREADY-CLAIMED)
+    (asserts! (> user-amount u0) ERR-NO-WINNINGS)
+    
+    ;; Mark as claimed
+    (map-set user-stakes
+      { user: tx-sender, market-id: market-id, outcome-index: winning-outcome }
+      (merge user-stake { claimed: true })
+    )
+    
+    ;; Transfer winnings
+    (try! (as-contract? ((with-stx user-winnings)) (try! (stx-transfer? user-winnings tx-sender tx-sender))))
+    
+    ;; Log claim event
+    (print {
+      event: "winnings-claimed",
+      user: tx-sender,
+      market-id: market-id,
+      amount: user-winnings,
+      block-height: stacks-block-height
+    })
+    
+    ;; Track win and earnings for achievements
+    (try! (increment-wins tx-sender))
+    (try! (add-stx-earned tx-sender user-winnings))
+    
+    (ok user-winnings)
+  )
+)
+
+;; ============================================
+;; PUBLIC FUNCTIONS - ACHIEVEMENT NFTs
+;; ============================================
+
+(define-public (set-achievement-metadata
+  (achievement-type uint)
+  (name (string-ascii 50))
+  (description (string-utf8 256))
+  (image-uri (string-ascii 256))
+  (enabled bool)
+)
+  (begin
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (> (len name) u0) ERR-INVALID-INPUT)
+    (asserts! (> (len description) u0) ERR-INVALID-INPUT)
+    (asserts! (> (len image-uri) u0) ERR-INVALID-INPUT)
+    (asserts! (<= achievement-type u5) ERR-INVALID-ACHIEVEMENT) ;; Valid achievement type
+    (ok (map-set achievement-metadata
+      { achievement-type: achievement-type }
+      {
+        name: name,
+        description: description,
+        image-uri: image-uri,
+        enabled: enabled
+      }
+    ))
+  )
+)
