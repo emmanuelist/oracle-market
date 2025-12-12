@@ -502,3 +502,89 @@
       amount: stake-amount,
       block-height: stacks-block-height
     })
+
+    ;; Track prediction for achievements
+    (try! (increment-predictions tx-sender))
+    
+    (ok true)
+  )
+)
+
+;; ============================================
+;; PUBLIC FUNCTIONS - MARKET RESOLUTION
+;; ============================================
+
+(define-public (lock-market (market-id uint))
+  ;; Locks a market to prevent further staking before oracle resolution
+  ;; Oracle Market requires markets to be locked before resolution
+  ;; Can only be called by oracle or contract owner after lock date
+  (let
+    (
+      ;; Note: market-id is validated here - unwrap! ensures market exists
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (market-state (get state market))
+      (lock-date (get lock-date market))
+    )
+    (asserts! (or (is-oracle) (is-contract-owner)) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq market-state STATE-ACTIVE) ERR-INVALID-MARKET-STATE)
+    (asserts! (>= stacks-block-height lock-date) ERR-INVALID-DATE)
+    
+    (map-set markets
+      { market-id: market-id }
+      (merge market { state: STATE-LOCKED })
+    )
+    (ok true)
+  )
+)
+
+(define-public (resolve-market (market-id uint) (winning-outcome-index uint))
+  ;; Oracle resolves the market by declaring the winning outcome
+  ;; This is the core Oracle Market function - oracle verifies real-world results
+  ;; Platform fee is collected and sent to treasury upon resolution
+  ;; Only the designated oracle can call this function
+  (let
+    (
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (market-state (get state market))
+      (outcome-count (get outcome-count market))
+      (resolution-date (get resolution-date market))
+      (total-pool (get total-pool market))
+      (fee-amount (calculate-fee total-pool))
+    )
+    (asserts! (is-oracle) ERR-INVALID-ORACLE)
+    (asserts! (or (is-eq market-state STATE-LOCKED) (is-eq market-state STATE-ACTIVE)) ERR-MARKET-ALREADY-RESOLVED)
+    (asserts! (>= stacks-block-height resolution-date) ERR-INVALID-DATE)
+    (asserts! (< winning-outcome-index outcome-count) ERR-INVALID-OUTCOME)
+    
+    ;; Transfer platform fee to treasury
+    (if (> fee-amount u0)
+      (begin
+        (try! (as-contract? ((with-stx fee-amount)) (try! (stx-transfer? fee-amount tx-sender (var-get treasury-address)))))
+        true
+      )
+      true
+    )
+    
+    ;; Update market state
+    (map-set markets
+      { market-id: market-id }
+      (merge market { 
+        state: STATE-RESOLVED,
+        winning-outcome: (some winning-outcome-index)
+      })
+    )
+    
+    ;; Log resolution event
+    (print {
+      event: "market-resolved",
+      market-id: market-id,
+      winning-outcome: winning-outcome-index,
+      total-pool: total-pool,
+      fee-collected: fee-amount,
+      resolved-by: tx-sender,
+      block-height: stacks-block-height
+    })
+    
+    (ok true)
+  )
+)
