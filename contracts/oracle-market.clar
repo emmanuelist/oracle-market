@@ -612,6 +612,7 @@
       (winning-pool (get-outcome-pool market-id winning-outcome))
       (winning-total (get total-staked winning-pool))
       (user-winnings (/ (* distributable-pool user-amount) winning-total))
+      (recipient tx-sender)
     )
     (asserts! (is-eq market-state STATE-RESOLVED) ERR-MARKET-NOT-RESOLVED)
     (asserts! (not already-claimed) ERR-ALREADY-CLAIMED)
@@ -623,8 +624,14 @@
       (merge user-stake { claimed: true })
     )
     
-    ;; Transfer winnings
-    (try! (as-contract? ((with-stx user-winnings)) (try! (stx-transfer? user-winnings tx-sender tx-sender))))
+    ;; Transfer winnings from contract to user
+    (if (> user-winnings u0)
+      (begin
+        (try! (as-contract? ((with-stx user-winnings)) (try! (stx-transfer? user-winnings tx-sender recipient))))
+        true
+      )
+      true
+    )
     
     ;; Log claim event
     (print {
@@ -924,6 +931,7 @@
       (user-stake (unwrap! (get-user-stake tx-sender market-id outcome-index) ERR-NO-WINNINGS))
       (user-amount (get amount user-stake))
       (already-claimed (get claimed user-stake))
+      (recipient tx-sender)
     )
     (asserts! (is-eq market-state STATE-CANCELLED) ERR-INVALID-MARKET-STATE)
     (asserts! (not already-claimed) ERR-ALREADY-CLAIMED)
@@ -935,10 +943,15 @@
       (merge user-stake { claimed: true })
     )
     
-    ;; Refund full amount
-    (try! (as-contract? ((with-stx user-amount)) (try! (stx-transfer? user-amount tx-sender tx-sender))))
+    ;; Refund full amount from contract to user
+    (if (> user-amount u0)
+      (begin
+        (try! (as-contract? ((with-stx user-amount)) (try! (stx-transfer? user-amount tx-sender recipient))))
+        true
+      )
+      true
+    )
     
     (ok user-amount)
   )
 )
-
