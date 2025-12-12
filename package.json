@@ -1,0 +1,23 @@
+{
+  "name": "oracle-market-tests",
+  "version": "1.0.0",
+  "description": "Run unit tests on this project.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:report": "vitest run -- --coverage --costs",
+    "test:watch": "chokidar \"tests/**/*.ts\" \"contracts/**/*.clar\" -c \"npm run test:report\""
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@stacks/clarinet-sdk": "^3.10.0",
+    "@stacks/connect": "^8.2.3",
+    "@stacks/transactions": "^7.3.0",
+    "@types/node": "25.0.0",
+    "chokidar-cli": "3.0.0",
+    "vitest": "^4.0.15",
+    "vitest-environment-clarinet": "3.0.2"
+  }
+}
