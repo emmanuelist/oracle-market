@@ -801,3 +801,79 @@
     )
   )
 )
+
+(define-private (add-stx-earned (user principal) (amount uint))
+  ;; Tracks total STX earnings in Oracle Market for wealth-based achievements
+  ;; Automatically mints "Century Club" achievement at 100 STX earned
+  (let
+    (
+      (stats (get-user-stats-or-default user))
+      (new-total (+ (get total-stx-earned stats) amount))
+    )
+    (map-set user-achievement-stats
+      { user: user }
+      (merge stats { total-stx-earned: new-total })
+    )
+    
+    ;; Log STX earned increment
+    (print {
+      event: "stx-earned-tracked",
+      user: user,
+      amount: amount,
+      total-earned: new-total,
+      block-height: stacks-block-height
+    })
+    
+    ;; Auto-mint STX earned achievement (100 STX = 100,000,000 microSTX)
+    (if (>= new-total u100000000)
+      (mint-achievement-internal user ACHIEVEMENT-HUNDRED-STX-EARNED)
+      (ok u0)
+    )
+  )
+)
+
+;; ============================================
+;; INITIALIZATION
+;; ============================================
+
+;; Initialize default achievement metadata
+;; These are the default Oracle Market achievement NFTs that reward user milestones
+(map-set achievement-metadata
+  { achievement-type: ACHIEVEMENT-FIRST-PREDICTION }
+  {
+    name: "First Prediction",
+    description: u"Made your first prediction on PopPredict",
+    image-uri: "ipfs://placeholder/first-prediction.png",
+    enabled: true
+  }
+)
+
+(map-set achievement-metadata
+  { achievement-type: ACHIEVEMENT-FIRST-WIN }
+  {
+    name: "First Win",
+    description: u"Won your first prediction market",
+    image-uri: "ipfs://placeholder/first-win.png",
+    enabled: true
+  }
+)
+
+(map-set achievement-metadata
+  { achievement-type: ACHIEVEMENT-FIVE-WINS }
+  {
+    name: "Rising Star",
+    description: u"Won 5 prediction markets",
+    image-uri: "ipfs://placeholder/five-wins.png",
+    enabled: true
+  }
+)
+
+(map-set achievement-metadata
+  { achievement-type: ACHIEVEMENT-TEN-WINS }
+  {
+    name: "Prophet",
+    description: u"Won 10 prediction markets",
+    image-uri: "ipfs://placeholder/ten-wins.png",
+    enabled: true
+  }
+)
