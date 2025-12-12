@@ -99,3 +99,100 @@ describe("Oracle Market Contract Tests", () => {
       
       expect(result.result).toBeOk(Cl.bool(true));
     });
+
+     it("should not allow platform fee above 10%", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "set-platform-fee",
+        [Cl.uint(1001)], // 10.01%
+        deployer
+      );
+      
+      expect(result.result).toBeErr(Cl.uint(114)); // ERR-INVALID-FEE
+    });
+
+    it("should allow owner to toggle pause", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "toggle-pause",
+        [],
+        deployer
+      );
+      
+      expect(result.result).toBeOk(Cl.bool(true));
+    });
+  });
+
+  describe("Market Creation", () => {
+    it("should create a market with valid parameters", () => {
+      const currentBlock = simnet.blockHeight;
+      const lockDate = currentBlock + 100;
+      const resolutionDate = currentBlock + 200;
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Who will win the 2026 election?"),
+          Cl.stringUtf8("Presidential election prediction market"),
+          Cl.stringAscii("Politics"),
+          Cl.list([
+            Cl.stringUtf8("Candidate A"),
+            Cl.stringUtf8("Candidate B"),
+            Cl.stringUtf8("Other")
+          ]),
+          Cl.uint(resolutionDate),
+          Cl.uint(lockDate)
+        ],
+        deployer
+      );
+
+      expect(result.result).toBeOk(Cl.uint(0));
+    });
+
+    it("should not allow non-owner to create market", () => {
+      const currentBlock = simnet.blockHeight;
+      const lockDate = currentBlock + 100;
+      const resolutionDate = currentBlock + 200;
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Test Description"),
+          Cl.stringAscii("Test"),
+          Cl.list([
+            Cl.stringUtf8("Option 1"),
+            Cl.stringUtf8("Option 2")
+          ]),
+          Cl.uint(resolutionDate),
+          Cl.uint(lockDate)
+        ],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(100)); // ERR-NOT-AUTHORIZED
+    });
+
+    it("should reject market with less than 2 outcomes", () => {
+      const currentBlock = simnet.blockHeight;
+      const lockDate = currentBlock + 100;
+      const resolutionDate = currentBlock + 200;
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Invalid Market"),
+          Cl.stringUtf8("Only one outcome"),
+          Cl.stringAscii("Test"),
+          Cl.list([Cl.stringUtf8("Only Option")]),
+          Cl.uint(resolutionDate),
+          Cl.uint(lockDate)
+        ],
+        deployer
+      );
+
+      expect(result.result).toBeErr(Cl.uint(117)); // ERR-INVALID-OUTCOME-COUNT
+    });
