@@ -303,3 +303,94 @@
     (ok none)
   )
 )
+
+(define-read-only (get-user-achievement (user principal) (achievement-type uint))
+  (map-get? user-achievements { user: user, achievement-type: achievement-type })
+)
+
+(define-read-only (has-achievement (user principal) (achievement-type uint))
+  (is-some (get-user-achievement user achievement-type))
+)
+
+(define-read-only (get-achievement-metadata-info (achievement-type uint))
+  (map-get? achievement-metadata { achievement-type: achievement-type })
+)
+
+(define-read-only (get-user-stats-info (user principal))
+  (ok (get-user-stats-or-default user))
+)
+
+(define-read-only (get-nft-contract-info)
+  (ok {
+    total-tokens: (var-get token-id-nonce)
+  })
+)
+
+;; ============================================
+;; PUBLIC FUNCTIONS - ADMIN
+;; ============================================
+
+(define-public (set-oracle-address (new-oracle principal))
+  ;; Updates the trusted oracle address for the Oracle Market
+  ;; Only the contract owner can designate who can resolve markets
+  (begin
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (is-standard new-oracle) ERR-INVALID-PRINCIPAL)
+    (ok (var-set oracle-address new-oracle))
+  )
+)
+
+(define-public (set-treasury-address (new-treasury principal))
+  (begin
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (is-standard new-treasury) ERR-INVALID-PRINCIPAL)
+    (ok (var-set treasury-address new-treasury))
+  )
+)
+
+(define-public (set-platform-fee (new-fee-bps uint))
+  (begin
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (<= new-fee-bps u1000) ERR-INVALID-FEE) ;; Max 10%
+    (ok (var-set platform-fee-bps new-fee-bps))
+  )
+)
+
+(define-public (toggle-pause)
+  (begin
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (ok (var-set contract-paused (not (var-get contract-paused))))
+  )
+)
+
+;; ============================================
+;; PUBLIC FUNCTIONS - MARKET CREATION
+;; ============================================
+
+(define-public (create-market 
+  ;; Creates a new prediction market in the Oracle Market platform
+  ;; Markets have 2-10 outcomes and require oracle resolution after lock date
+  ;; Only admins can create markets to ensure quality control
+  (title (string-ascii 256))
+  (description (string-utf8 1024))
+  (category (string-ascii 50))
+  (outcomes (list 10 (string-utf8 256)))
+  (resolution-date uint)
+  (lock-date uint)
+)
+  (let
+    (
+      (new-market-id (var-get market-id-nonce))
+      (outcome-count (len outcomes))
+    )
+    (asserts! (not (var-get contract-paused)) ERR-PAUSED)
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (>= outcome-count u2) ERR-INVALID-OUTCOME-COUNT) ;; At least 2 outcomes
+    (asserts! (<= outcome-count u10) ERR-INVALID-OUTCOME-COUNT) ;; Max 10 outcomes
+    (asserts! (> (len title) u0) ERR-INVALID-INPUT) ;; Title not empty
+    (asserts! (> (len description) u0) ERR-INVALID-INPUT) ;; Description not empty
+    (asserts! (> (len category) u0) ERR-INVALID-INPUT) ;; Category not empty
+    (asserts! (> resolution-date stacks-block-height) ERR-INVALID-DATE) ;; Future resolution
+    (asserts! (> lock-date stacks-block-height) ERR-INVALID-DATE) ;; Future lock
+    (asserts! (< lock-date resolution-date) ERR-INVALID-DATE) ;; Lock before resolution
+    
