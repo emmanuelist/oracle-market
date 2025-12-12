@@ -501,3 +501,105 @@ describe("Oracle Market Contract Tests", () => {
         [Cl.principal(oracle)],
         deployer
       );
+
+       const currentBlock = simnet.blockHeight;
+      marketId = 0;
+
+      // Create market
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Test Description"),
+          Cl.stringAscii("Sports"),
+          Cl.list([
+            Cl.stringUtf8("Team A"),
+            Cl.stringUtf8("Team B")
+          ]),
+          Cl.uint(currentBlock + 20),
+          Cl.uint(currentBlock + 10)
+        ],
+        deployer
+      );
+
+      // Place stakes
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(marketId), Cl.uint(0), Cl.uint(MIN_STAKE * 10)],
+        wallet1
+      );
+
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(marketId), Cl.uint(1), Cl.uint(MIN_STAKE * 5)],
+        wallet2
+      );
+
+      // Advance time and resolve market
+      simnet.mineEmptyBlocks(21);
+      simnet.callPublicFn(
+        "oracle-market",
+        "resolve-market",
+        [Cl.uint(marketId), Cl.uint(0)], // Team A wins
+        oracle
+      );
+    });
+
+    it("should allow winner to claim winnings", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "claim-winnings",
+        [Cl.uint(marketId)],
+        wallet1
+      );
+
+      expect(result.result).toBeOk(Cl.uint(14550000));
+    });
+
+    it("should not allow loser to claim winnings", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "claim-winnings",
+        [Cl.uint(marketId)],
+        wallet2
+      );
+
+      expect(result.result).toBeErr(Cl.uint(108)); // ERR-NO-WINNINGS
+    });
+
+    it("should not allow double claiming", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "claim-winnings",
+        [Cl.uint(marketId)],
+        wallet1
+      );
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "claim-winnings",
+        [Cl.uint(marketId)],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(109)); // ERR-ALREADY-CLAIMED
+    });
+
+    it("should not allow claiming before market is resolved", () => {
+      // Create new market without resolving
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("New Market"),
+          Cl.stringUtf8("Test"),
+          Cl.stringAscii("Test"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
