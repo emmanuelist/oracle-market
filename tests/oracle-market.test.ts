@@ -196,3 +196,114 @@ describe("Oracle Market Contract Tests", () => {
 
       expect(result.result).toBeErr(Cl.uint(117)); // ERR-INVALID-OUTCOME-COUNT
     });
+
+    it("should reject market with lock date after resolution date", () => {
+      const currentBlock = simnet.blockHeight;
+      const lockDate = currentBlock + 200;
+      const resolutionDate = currentBlock + 100;
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Invalid Market"),
+          Cl.stringUtf8("Bad dates"),
+          Cl.stringAscii("Test"),
+          Cl.list([
+            Cl.stringUtf8("Option 1"),
+            Cl.stringUtf8("Option 2")
+          ]),
+          Cl.uint(resolutionDate),
+          Cl.uint(lockDate)
+        ],
+        deployer
+      );
+
+      expect(result.result).toBeErr(Cl.uint(119)); // ERR-INVALID-DATE
+    });
+  });
+
+  describe("Staking", () => {
+    beforeEach(() => {
+      // Create a test market before each staking test
+      const currentBlock = simnet.blockHeight;
+      const lockDate = currentBlock + 100;
+      const resolutionDate = currentBlock + 200;
+
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Test Description"),
+          Cl.stringAscii("Sports"),
+          Cl.list([
+            Cl.stringUtf8("Team A"),
+            Cl.stringUtf8("Team B")
+          ]),
+          Cl.uint(resolutionDate),
+          Cl.uint(lockDate)
+        ],
+        deployer
+      );
+    });
+
+    it("should allow user to place a valid stake", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [
+          Cl.uint(0), // market-id
+          Cl.uint(0), // outcome-index
+          Cl.uint(MIN_STAKE) // stake amount
+        ],
+        wallet1
+      );
+
+      expect(result.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should reject stake below minimum", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [
+          Cl.uint(0),
+          Cl.uint(0),
+          Cl.uint(MIN_STAKE - 1)
+        ],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(104)); // ERR-STAKE-TOO-LOW
+    });
+
+    it("should reject stake above maximum", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [
+          Cl.uint(0),
+          Cl.uint(0),
+          Cl.uint(MAX_STAKE + 1)
+        ],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(105)); // ERR-STAKE-TOO-HIGH
+    });
+
+    it("should reject stake on invalid outcome", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [
+          Cl.uint(0),
+          Cl.uint(5), // Invalid outcome index
+          Cl.uint(MIN_STAKE)
+        ],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(103)); // ERR-INVALID-OUTCOME
+    });
