@@ -603,3 +603,107 @@ describe("Oracle Market Contract Tests", () => {
         ],
         deployer
       );
+
+       simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(1), Cl.uint(0), Cl.uint(MIN_STAKE)],
+        wallet3
+      );
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "claim-winnings",
+        [Cl.uint(1)],
+        wallet3
+      );
+
+      expect(result.result).toBeErr(Cl.uint(107)); // ERR-MARKET-NOT-RESOLVED
+    });
+  });
+
+  describe("Market Cancellation", () => {
+    let marketId: number;
+
+    beforeEach(() => {
+      marketId = 0;
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Test Description"),
+          Cl.stringAscii("Sports"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
+
+      simnet.callPublicFn(
+        "oracle-market",
+        "place-stake",
+        [Cl.uint(marketId), Cl.uint(0), Cl.uint(MIN_STAKE * 5)],
+        wallet1
+      );
+    });
+
+    it("should allow owner to cancel market", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "cancel-market",
+        [Cl.uint(marketId)],
+        deployer
+      );
+
+      expect(result.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should not allow non-owner to cancel market", () => {
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "cancel-market",
+        [Cl.uint(marketId)],
+        wallet1
+      );
+
+      expect(result.result).toBeErr(Cl.uint(100)); // ERR-NOT-AUTHORIZED
+    });
+
+    it("should allow users to claim refund from cancelled market", () => {
+      simnet.callPublicFn(
+        "oracle-market",
+        "cancel-market",
+        [Cl.uint(marketId)],
+        deployer
+      );
+
+      const result = simnet.callPublicFn(
+        "oracle-market",
+        "claim-refund",
+        [Cl.uint(marketId), Cl.uint(0)],
+        wallet1
+      );
+
+      expect(result.result).toBeOk(Cl.uint(MIN_STAKE * 5));
+    });
+  });
+
+  describe("Achievement NFTs", () => {
+    beforeEach(() => {
+      // Create market
+      simnet.callPublicFn(
+        "oracle-market",
+        "create-market",
+        [
+          Cl.stringAscii("Test Market"),
+          Cl.stringUtf8("Test Description"),
+          Cl.stringAscii("Sports"),
+          Cl.list([Cl.stringUtf8("A"), Cl.stringUtf8("B")]),
+          Cl.uint(simnet.blockHeight + 100),
+          Cl.uint(simnet.blockHeight + 50)
+        ],
+        deployer
+      );
+    });
