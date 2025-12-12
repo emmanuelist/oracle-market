@@ -502,7 +502,7 @@
       amount: stake-amount,
       block-height: stacks-block-height
     })
-
+    
     ;; Track prediction for achievements
     (try! (increment-predictions tx-sender))
     
@@ -877,3 +877,68 @@
     enabled: true
   }
 )
+
+(map-set achievement-metadata
+  { achievement-type: ACHIEVEMENT-HUNDRED-STX-EARNED }
+  {
+    name: "Century Club",
+    description: u"Earned 100 STX in total winnings",
+    image-uri: "ipfs://placeholder/hundred-stx.png",
+    enabled: true
+  }
+)
+
+;; ============================================
+;; PUBLIC FUNCTIONS - MARKET CANCELLATION
+;; ============================================
+
+(define-public (cancel-market (market-id uint))
+  ;; Cancels a market in the Oracle Market if needed (emergency or invalid market)
+  ;; Users can claim full refunds when markets are cancelled
+  ;; Only contract owner can cancel markets to prevent oracle manipulation
+  (let
+    (
+      ;; Note: market-id is validated here - unwrap! ensures market exists
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (market-state (get state market))
+    )
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (not (is-eq market-state STATE-RESOLVED)) ERR-MARKET-ALREADY-RESOLVED)
+    
+    (map-set markets
+      { market-id: market-id }
+      (merge market { state: STATE-CANCELLED })
+    )
+    (ok true)
+  )
+)
+
+(define-public (claim-refund (market-id uint) (outcome-index uint))
+  ;; Allows users to claim full refunds from cancelled Oracle Market markets
+  ;; No fees are deducted for refunds, users get back their original stakes
+  (let
+    (
+      ;; Note: market-id and outcome-index validated - unwrap! ensures data exists
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (market-state (get state market))
+      (user-stake (unwrap! (get-user-stake tx-sender market-id outcome-index) ERR-NO-WINNINGS))
+      (user-amount (get amount user-stake))
+      (already-claimed (get claimed user-stake))
+    )
+    (asserts! (is-eq market-state STATE-CANCELLED) ERR-INVALID-MARKET-STATE)
+    (asserts! (not already-claimed) ERR-ALREADY-CLAIMED)
+    (asserts! (> user-amount u0) ERR-NO-WINNINGS)
+    
+    ;; Mark as claimed
+    (map-set user-stakes
+      { user: tx-sender, market-id: market-id, outcome-index: outcome-index }
+      (merge user-stake { claimed: true })
+    )
+    
+    ;; Refund full amount
+    (try! (as-contract? ((with-stx user-amount)) (try! (stx-transfer? user-amount tx-sender tx-sender))))
+    
+    (ok user-amount)
+  )
+)
+
