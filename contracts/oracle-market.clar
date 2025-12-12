@@ -394,3 +394,111 @@
     (asserts! (> lock-date stacks-block-height) ERR-INVALID-DATE) ;; Future lock
     (asserts! (< lock-date resolution-date) ERR-INVALID-DATE) ;; Lock before resolution
     
+    ;; Create the market
+    (map-set markets
+      { market-id: new-market-id }
+      {
+        title: title,
+        description: description,
+        category: category,
+        outcomes: outcomes,
+        outcome-count: outcome-count,
+        resolution-date: resolution-date,
+        lock-date: lock-date,
+        state: STATE-ACTIVE,
+        total-pool: u0,
+        winning-outcome: none,
+        creator: tx-sender,
+        created-at: stacks-block-height
+      }
+    )
+    
+    ;; Log market creation event
+    (print {
+      event: "market-created",
+      market-id: new-market-id,
+      creator: tx-sender,
+      block-height: stacks-block-height
+    })
+    
+    (var-set market-id-nonce (+ new-market-id u1))
+    (ok new-market-id)
+  )
+)
+
+;; ============================================
+;; PUBLIC FUNCTIONS - STAKING
+;; ============================================
+
+(define-public (place-stake (market-id uint) (outcome-index uint) (stake-amount uint))
+  ;; Allows users to stake STX on a market outcome in the Oracle Market
+  ;; Stakes determine odds and potential winnings after oracle resolution
+  ;; Users can only stake before the market lock date
+  (let
+    (
+      ;; Note: market-id is validated here - unwrap! ensures market exists
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (market-state (get state market))
+      (outcome-count (get outcome-count market))
+      (lock-date (get lock-date market))
+      (current-pool (get-outcome-pool market-id outcome-index))
+      (existing-stake (map-get? user-stakes { user: tx-sender, market-id: market-id, outcome-index: outcome-index }))
+    )
+    (asserts! (not (var-get contract-paused)) ERR-PAUSED)
+    (asserts! (is-eq market-state STATE-ACTIVE) ERR-MARKET-CLOSED)
+    (asserts! (< stacks-block-height lock-date) ERR-MARKET-LOCKED)
+    (asserts! (< outcome-index outcome-count) ERR-INVALID-OUTCOME)
+    (asserts! (>= stake-amount MIN-STAKE) ERR-STAKE-TOO-LOW)
+    (asserts! (<= stake-amount MAX-STAKE) ERR-STAKE-TOO-HIGH)
+    
+    ;; Transfer STX from user to contract principal
+    ;; In Clarity 4, we need to get the contract's own principal using unwrap!
+    (try! (stx-transfer? stake-amount tx-sender (unwrap! (as-contract? () tx-sender) ERR-TRANSFER-FAILED)))
+    
+    ;; Update outcome pool
+    (map-set outcome-pools
+      { market-id: market-id, outcome-index: outcome-index }
+      {
+        total-staked: (+ (get total-staked current-pool) stake-amount),
+        staker-count: (if (is-none existing-stake) 
+                        (+ (get staker-count current-pool) u1)
+                        (get staker-count current-pool))
+      }
+    )
+    
+    ;; Update or create user stake
+    (match existing-stake
+      prev-stake
+        (map-set user-stakes
+          { user: tx-sender, market-id: market-id, outcome-index: outcome-index }
+          {
+            amount: (+ (get amount prev-stake) stake-amount),
+            timestamp: stacks-block-height,
+            claimed: false
+          }
+        )
+      (map-set user-stakes
+        { user: tx-sender, market-id: market-id, outcome-index: outcome-index }
+        {
+          amount: stake-amount,
+          timestamp: stacks-block-height,
+          claimed: false
+        }
+      )
+    )
+    
+    ;; Update market total pool
+    (map-set markets
+      { market-id: market-id }
+      (merge market { total-pool: (+ (get total-pool market) stake-amount) })
+    )
+    
+    ;; Log stake event
+    (print {
+      event: "stake-placed",
+      user: tx-sender,
+      market-id: market-id,
+      outcome-index: outcome-index,
+      amount: stake-amount,
+      block-height: stacks-block-height
+    })
