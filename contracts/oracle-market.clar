@@ -97,7 +97,8 @@
 ;; Stores all information about prediction markets in the Oracle Market
 ;; Markets are created by admins and resolved by oracles
 (define-map markets
-
+  { market-id: uint }
+  {
     title: (string-ascii 256),
     description: (string-utf8 1024),
     category: (string-ascii 50),
@@ -197,4 +198,108 @@
   ;; Calculates the Oracle Market platform fee from the total pool
   ;; Fee is collected during market resolution and sent to treasury
   (/ (* amount (var-get platform-fee-bps)) BPS-DIVISOR)
+)
+
+;; ============================================
+;; READ-ONLY FUNCTIONS
+;; ============================================
+
+(define-read-only (get-market (market-id uint))
+  (map-get? markets { market-id: market-id })
+)
+
+(define-read-only (get-user-stake (user principal) (market-id uint) (outcome-index uint))
+  (map-get? user-stakes { user: user, market-id: market-id, outcome-index: outcome-index })
+)
+
+(define-read-only (get-outcome-pool-info (market-id uint) (outcome-index uint))
+  (ok (get-outcome-pool market-id outcome-index))
+)
+
+(define-read-only (get-current-odds (market-id uint) (outcome-index uint))
+  ;; Calculates real-time odds for an outcome based on stake distribution
+  ;; Returns odds as basis points (10000 = 100%) for Oracle Market UI display
+  (let
+    (
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (total-pool (get total-pool market))
+      (outcome-pool (get-outcome-pool market-id outcome-index))
+      (outcome-staked (get total-staked outcome-pool))
+    )
+    (if (is-eq total-pool u0)
+      (ok u0)
+      (ok (/ (* outcome-staked u10000) total-pool))
+    )
+  )
+)
+
+(define-read-only (calculate-potential-winnings (market-id uint) (outcome-index uint) (stake-amount uint))
+  ;; Estimates potential payout for a stake on an outcome
+  ;; Helps Oracle Market users make informed prediction decisions
+  ;; Accounts for platform fees and current pool distribution
+  (let
+    (
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+      (total-pool (get total-pool market))
+      (outcome-pool (get-outcome-pool market-id outcome-index))
+      (outcome-staked (get total-staked outcome-pool))
+      (new-outcome-staked (+ outcome-staked stake-amount))
+      (new-total-pool (+ total-pool stake-amount))
+      (fee (calculate-fee new-total-pool))
+      (distributable-pool (- new-total-pool fee))
+    )
+    (if (is-eq new-outcome-staked u0)
+      (ok u0)
+      (ok (/ (* distributable-pool stake-amount) new-outcome-staked))
+    )
+  )
+)
+
+(define-read-only (get-contract-info)
+  (ok {
+    paused: (var-get contract-paused),
+    oracle: (var-get oracle-address),
+    treasury: (var-get treasury-address),
+    fee-bps: (var-get platform-fee-bps),
+    next-market-id: (var-get market-id-nonce)
+  })
+)
+
+(define-read-only (get-market-display-info (market-id uint))
+  (let
+    (
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+    )
+    (ok {
+      market-id: market-id,
+      state: (get state market),
+      total-pool: (get total-pool market),
+      current-block: stacks-block-height
+    })
+  )
+)
+
+;; ============================================
+;; READ-ONLY FUNCTIONS - ACHIEVEMENT NFTs
+;; ============================================
+
+(define-read-only (get-last-token-id)
+  (ok (var-get token-id-nonce))
+)
+
+(define-read-only (get-token-uri (token-id uint))
+  ;; Find which achievement type this token belongs to by checking user-achievements
+  ;; This is a limitation - we'd need to store achievement-type in token-owners for direct lookup
+  ;; For now, return a generic response
+  (match (map-get? token-owners { token-id: token-id })
+    owner-data (ok (some "ipfs://placeholder/achievement.png"))
+    ERR-NFT-NOT-FOUND
+  )
+)
+
+(define-read-only (get-nft-owner (token-id uint))
+  (match (map-get? token-owners { token-id: token-id })
+    owner-data (ok (some (get owner owner-data)))
+    (ok none)
+  )
 )
