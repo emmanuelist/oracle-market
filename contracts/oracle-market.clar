@@ -97,4 +97,104 @@
 ;; Stores all information about prediction markets in the Oracle Market
 ;; Markets are created by admins and resolved by oracles
 (define-map markets
-  { market-id: uint }
+
+    title: (string-ascii 256),
+    description: (string-utf8 1024),
+    category: (string-ascii 50),
+    outcomes: (list 10 (string-utf8 256)),
+    outcome-count: uint,
+    resolution-date: uint,
+    lock-date: uint,
+    state: (string-ascii 20),
+    total-pool: uint,
+    winning-outcome: (optional uint),
+    creator: principal,
+    created-at: uint
+  }
+)
+
+;; Track stakes per outcome for each market
+;; Aggregates total stakes on each outcome to calculate odds and payouts
+(define-map outcome-pools
+  { market-id: uint, outcome-index: uint }
+  { total-staked: uint, staker-count: uint }
+)
+
+;; Track individual user stakes
+;; Records each user's prediction and stake amount for claiming winnings
+;; after oracle resolves the market
+(define-map user-stakes
+  { user: principal, market-id: uint, outcome-index: uint }
+  { amount: uint, timestamp: uint, claimed: bool }
+)
+
+;; Achievement NFT Maps
+;; Soulbound tokens that reward Oracle Market participants
+;; These NFTs cannot be transferred once earned
+(define-map token-owners
+  { token-id: uint }
+  { owner: principal }
+)
+
+(define-map user-achievements
+  { user: principal, achievement-type: uint }
+  { token-id: uint, earned-at: uint }
+)
+
+(define-map achievement-metadata
+  { achievement-type: uint }
+  {
+    name: (string-ascii 50),
+    description: (string-utf8 256),
+    image-uri: (string-ascii 256),
+    enabled: bool
+  }
+)
+
+(define-map user-achievement-stats
+  { user: principal }
+  {
+    total-predictions: uint,
+    total-wins: uint,
+    total-stx-earned: uint,
+    achievement-count: uint
+  }
+)
+
+;; ============================================
+;; PRIVATE HELPER FUNCTIONS
+;; ============================================
+
+(define-private (get-outcome-pool (market-id uint) (outcome-index uint))
+  (default-to 
+    { total-staked: u0, staker-count: u0 }
+    (map-get? outcome-pools { market-id: market-id, outcome-index: outcome-index })
+  )
+)
+
+(define-private (get-user-stats-or-default (user principal))
+  (default-to
+    { total-predictions: u0, total-wins: u0, total-stx-earned: u0, achievement-count: u0 }
+    (map-get? user-achievement-stats { user: user })
+  )
+)
+
+;; ============================================
+;; PRIVATE FUNCTIONS
+;; ============================================
+
+(define-private (is-contract-owner)
+  (is-eq tx-sender CONTRACT-OWNER)
+)
+
+(define-private (is-oracle)
+  ;; Validates that the caller is the trusted oracle address
+  ;; Only oracles can resolve markets in the Oracle Market system
+  (is-eq tx-sender (var-get oracle-address))
+)
+
+(define-private (calculate-fee (amount uint))
+  ;; Calculates the Oracle Market platform fee from the total pool
+  ;; Fee is collected during market resolution and sent to treasury
+  (/ (* amount (var-get platform-fee-bps)) BPS-DIVISOR)
+)
