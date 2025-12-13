@@ -955,3 +955,30 @@
     (ok user-amount)
   )
 )
+
+(define-public (update-market 
+  (market-id uint) 
+  (title (string-ascii 256)) 
+  (description (string-utf8 1024)) 
+  (category (string-ascii 50))
+)
+  (let
+    (
+      (market (unwrap! (get-market market-id) ERR-MARKET-NOT-FOUND))
+    )
+    (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (> (len title) u0) ERR-INVALID-INPUT)
+    (asserts! (> (len description) u0) ERR-INVALID-INPUT)
+    (asserts! (> (len category) u0) ERR-INVALID-INPUT)
+    
+    (map-set markets
+      { market-id: market-id }
+      (merge market { 
+        title: title, 
+        description: description, 
+        category: category 
+      })
+    )
+    (ok true)
+  )
+)
